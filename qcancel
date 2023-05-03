@@ -1,0 +1,8 @@
+#!/bin/bash
+input_file=$1
+while read line
+do
+        sample=$(echo ${line} | cut -d ' ' -f1)
+        qid=$(echo ${line} | cut -d ' ' -f2)
+        qdel ${qid}
+done < ${input_file}

@@ -1,0 +1,103 @@
+# Parameters
+pipeline = "guppy_f5c_m6anet"
+version = "2023.5.2"
+work_dir = "/home/zhangjy/data/PycharmProjects/qbatch/test_output"
+sample_sheet = "/home/zhangjy/data/PycharmProjects/qbatch/example.csv"
+pbs_scheduler = "slurm"
+pbs_server = 'Z4G4'
+pbs_queue = 'sbatch'
+pbs_walltime = 1200
+
+# Parameters
+guppy_model = "rna_r9.4.1_70bps_hac.cfg"
+transcriptome = "/data/public/database/GENCODE/Human_Release_37/gencode.v37.annotation.fa"
+
+# Executable
+guppy_basecaller = "/data/public/software/ont-guppy_6.3.7/bin/guppy_basecaller"
+minimap2 = "/data/public/software/minimap2-2.20_x64-linux/minimap2"
+samtools = "/data/public/software/samtools-1.11/bin/samtools"
+f5c = "/data/public/software/f5c-v1.1/bin/f5c"
+slow5tools = "/data/public/software/slow5tools-v0.7.0/slow5tools"
+m6anet = "/data/public/software/m6Anet/bin/m6anet"
+
+# Rules
+[job.guppy]
+input = "{sample.fast5_dir}"
+output = [
+    {fq = "{work_dir}/out_guppy/{sample.name}.fastq.gz"},
+    {pass_fq = "{work_dir}/out_guppy/{sample.name}.pass.fastq.gz"},
+]
+threads = 18
+log = "{work_dir}/logs/{sample.name}.guppy.logs"
+shell = """
+mkdir -p {work_dir}/out_guppy
+{guppy_basecaller} -r -i {input} -s {work_dir}/out_guppy/{sample.name} \
+    -c {guppy_model} \
+    -x auto \
+    --compress_fastq \
+    --fast5_out \
+    --disable_pings
+cat {work_dir}/out_guppy/{sample.name}/*/*.fastq.gz > {output.fq}
+cat {work_dir}/out_guppy/{sample.name}/pass/*.fastq.gz > {output.pass_fq}
+"""
+
+[job.minimap2]
+depend = "guppy"
+input = "{work_dir}/out_guppy/{sample.name}.pass.fastq.gz"
+output = "{work_dir}/out_alignment/{sample.name}.sorted.bam"
+threads = 18
+log = "{work_dir}/logs/{sample.name}.minimap2.logs"
+shell = """
+mkdir -p {work_dir}/out_alignment
+{minimap2} -ax map-ont -uf -secondary=no -k14 --cs -t {threads} {transcriptome} {input} | \
+    {samtools} sort -@ {threads} -o {output}
+{samtools} index -@ {threads} {output}
+"""
+
+[job.slow5tools]
+depend = "guppy"
+input = "{work_dir}/out_guppy/{sample.name}/workspace"
+output = "{work_dir}/out_slow5/{sample.name}.blow5"
+threads = 18
+log = "{work_dir}/logs/{sample.name}.slow5tools.logs"
+shell = """
+source /data/public/config/slow5tools.sh
+mkdir -p {work_dir}/out_slow5
+{slow5tools} f2s {input} --allow -d {work_dir}/out_slow5/{sample.name} -p {threads}
+{slow5tools} merge {work_dir}/out_slow5/{sample.name} -o {output} -t {threads}
+"""
+
+[job.f5c]
+depend = ["minimap2", "slow5tools"]
+fastq = "{work_dir}/out_guppy/{sample.name}.pass.fastq.gz"
+blow5 = "{work_dir}/out_slow5/{sample.name}.blow5"
+bam = "{work_dir}/out_alignment/{sample.name}.sorted.bam"
+output = [
+    {summary = "{work_dir}/out_f5c/{sample.name}_summary.txt"},
+    {eventalign = "{work_dir}/out_f5c/{sample.name}_eventalign.txt"},
+]
+threads = 18
+log = "{work_dir}/logs/{sample.name}.f5c.logs"
+shell = """
+source /data/public/config/f5c-v1.1.sh
+mkdir -p {work_dir}/out_f5c
+{f5c} index -t {threads} --iop {threads} {fastq} --slow5 {blow5}
+{f5c} eventalign --min-mapq 0 --rna --signal-index --scale-events \
+    --threads {threads} \
+    --reads {fastq} \
+    --slow5 {blow5} \
+    --bam {bam} \
+    --genome {transcriptome} \
+    --summary {output.summary} > {output.eventalign}
+"""
+
+[job.m6anet]
+depend = "f5c"
+input = "{work_dir}/out_f5c/{sample.name}_eventalign.txt"
+output = "{work_dir}/out_m6anet/{sample.name}"
+threads = 18
+log = "{work_dir}/logs/{sample.name}.m6anet.logs"
+shell = """
+{m6anet} dataprep --eventalign {input} --out_dir {output} --n_processes {threads}
+{m6anet} inference --input_dir {output} --out_dir {output} --n_processes {threads} --num_iterations 1000
+"""
