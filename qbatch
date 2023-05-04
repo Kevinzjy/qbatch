@@ -507,7 +507,7 @@ class PBSJob(object):
             self.threads = job['threads']
         else:
             self.threads = 1
-        
+
         if 'gpus' in job:
             self.gpus = job['gpus']
         else:
