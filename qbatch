@@ -489,8 +489,8 @@ class PBSJob(object):
             sys.exit(0)
 
         # Work directory
-        if 'work_dir' in job:
-            self.work_dir = job['work_dir']
+        if 'dir' in job:
+            self.work_dir = job['dir']
         elif 'work_dir' in env:
             self.work_dir = env['work_dir']
         else:
@@ -501,7 +501,7 @@ class PBSJob(object):
         if 'log' in job:
             self.log = job['log']
         else:
-            self.log = f"{env['work_dir']}/{self.job_name}.logs"
+            self.log = f"{env['work_dir']}/logs/{self.job_name}.logs"
 
         if 'threads' in job:
             self.threads = job['threads']
@@ -535,7 +535,9 @@ class PBSJob(object):
             out.write(f"#SBATCH -D {self.work_dir}\n")
             out.write(f"set -e\n")
             out.write(f"cd {self.work_dir}\n")
+            out.write(f"[$(date)] {self.job_name} started\n")
             out.write(self.shell)
+            out.write(f"[$(date)] {self.job_name} finished\n")
             out.write(f"echo $SLURM_JOB_ID >> {self.work_dir}/checkpoint\n")
 
     def write_torque(self):
@@ -553,7 +555,9 @@ class PBSJob(object):
             out.write(f"#PBS -d {self.work_dir}\n")
             out.write(f"set -e\n")
             out.write(f"cd {self.work_dir}\n")
+            out.write(f"[$(date)] {self.job_name} started\n")
             out.write(self.shell)
+            out.write(f"[$(date)] {self.job_name} finished\n")
             out.write(f"echo $PBS_JOBID >> {self.work_dir}/checkpoint\n")
 
     def submit(self, depend_ids=[]):
