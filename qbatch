@@ -280,10 +280,10 @@ class Template(object):
         template_dict = job_dict.copy()
         self.nested_dict(template_dict)
         self.dict = template_dict
-        for x in ['output', 'threads', 'shell']:
+        for x in ['shell']:
             if x not in self.dict:
-                sys.stderr.write(f"\nError traceback:\n{HIGHLIGHT}{key}{NORMAL} not found in {HIGHLIGHT}{self.name}{NORMAL}\n")
-                sys.stderr.write(f"\nFailed reason:\nthe [output/threads/shell] fields should be specified for each job.\n")
+                sys.stderr.write(f"\nError traceback:\n{HIGHLIGHT}{x}{NORMAL} not found in {HIGHLIGHT}{self.name}{NORMAL}\n")
+                sys.stderr.write(f"\nFailed reason:\nthe [shell] fields should be specified for each job.\n")
                 sys.exit(1)
 
     def __getitem__(self, key):
