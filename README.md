@@ -213,7 +213,7 @@ qcancel work_dir/jobs
 You can also continue unfinished jobs using the record pipeline file. Only jobs recorded in `jobs` and not presented in `checkpoint` will be resubmitted.
 
 ```bash
-qbatch work_dir/pipeline
+qbatch -c work_dir/pipeline
 ```
 
 # **NOTE**

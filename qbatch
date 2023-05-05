@@ -66,12 +66,14 @@ def strptime(s):
 
 class Pipeline(object):
 
-    def __init__(self, file_name):
+    def __init__(self, file_name, is_continue):
         """Load TOML configuration into Pipeline object
 
         Args:
             file_name (str): path to TOML file
         """
+        self.is_continue = is_continue
+
         # Load TOML configuration
         toml_file = ensure_file_exist(file_name)
         with open(toml_file, "rb") as f:
@@ -235,7 +237,7 @@ class Pipeline(object):
                 pbs_job.write()
 
                 # If checkpoint defined
-                if self.jobs is not None:
+                if self.is_continue and self.jobs is not None:
                     # If job has been finished
                     if job.name not in self.jobs:
                         job_ids[job.name] = None
@@ -535,9 +537,9 @@ class PBSJob(object):
             out.write(f"#SBATCH -D {self.work_dir}\n")
             out.write(f"set -e\n")
             out.write(f"cd {self.work_dir}\n")
-            out.write(f"[$(date)] {self.job_name} started\n")
+            out.write(f"echo \"[$(date)] {self.job_name} started\"\n")
             out.write(self.shell)
-            out.write(f"[$(date)] {self.job_name} finished\n")
+            out.write(f"echo \"[$(date)] {self.job_name} finished\"\n")
             out.write(f"echo $SLURM_JOB_ID >> {self.work_dir}/checkpoint\n")
 
     def write_torque(self):
@@ -555,9 +557,9 @@ class PBSJob(object):
             out.write(f"#PBS -d {self.work_dir}\n")
             out.write(f"set -e\n")
             out.write(f"cd {self.work_dir}\n")
-            out.write(f"[$(date)] {self.job_name} started\n")
+            out.write(f"echo \"[$(date)] {self.job_name} started\"\n")
             out.write(self.shell)
-            out.write(f"[$(date)] {self.job_name} finished\n")
+            out.write(f"echo \"[$(date)] {self.job_name} finished\"\n")
             out.write(f"echo $PBS_JOBID >> {self.work_dir}/checkpoint\n")
 
     def submit(self, depend_ids=[]):
@@ -616,10 +618,12 @@ def main():
                         help='path to input toml file')
     parser.add_argument('-v', '--version', action='version',
                         version='%(prog)s v{version}'.format(version=__version__))
+    parser.add_argument('-c', '--continue', dest='c', default=False, action='store_true',
+                        help='continue jobs from checkpoint, default: %(default)s)')
     args = parser.parse_args()
 
     toml_file = args.toml
-    pl = Pipeline(toml_file)
+    pl = Pipeline(toml_file, args.c)
     pl.init()
     pl.run()
 
