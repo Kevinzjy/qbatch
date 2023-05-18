@@ -616,7 +616,7 @@ def main():
     # Init parser
     parser = argparse.ArgumentParser(
         prog='qbatch', description='a python-based job scheduler',
-        epilog='Support native torque/slurm for build analysis pipeline'
+        epilog='use native torque/slurm job dependencies for build analysis pipeline'
     )
     parser.add_argument('toml', metavar='toml',
                         help='path to input toml file')
