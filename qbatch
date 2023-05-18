@@ -12,7 +12,7 @@ from datetime import datetime
 from subprocess import getstatusoutput
 from collections import namedtuple, defaultdict
 __version__ = '0.1.0'
-PATTERN = re.compile(r'\{.*?\}')
+PATTERN = re.compile(r'\{\S*?\}')
 HIGHLIGHT = "\033[1;32m"
 NORMAL = "\033[0m"
 
@@ -217,7 +217,7 @@ class Pipeline(object):
         else:
             return None
 
-    def run(self):
+    def run(self, is_dry):
         lock = open(self.lock, 'w')
         job_ids = {}
 
@@ -235,6 +235,8 @@ class Pipeline(object):
                 pbs_file = self.script_dir / (job.name + ".sh")
                 pbs_job = PBSJob(job, self.dict, pbs_file)
                 pbs_job.write()
+                if is_dry:
+                    continue
 
                 # If checkpoint defined
                 if self.is_continue and self.jobs is not None:
@@ -413,6 +415,8 @@ class Job(Template):
                         # Not found
                         sys.stderr.write(f"\nError traceback:\n{v.strip()}\n")
                         sys.stderr.write(f"\nFailed reason:\nfield {HIGHLIGHT}{param}{NORMAL} not found.\n")
+                        sys.stderr.write(f"\nPipeline attributes:\n{env}\n")
+                        sys.stderr.write(f"\nJob attributes:\n{self.dict}\n")
                         sys.exit(0)
 
                     new_v = v
@@ -619,13 +623,15 @@ def main():
     parser.add_argument('-v', '--version', action='version',
                         version='%(prog)s v{version}'.format(version=__version__))
     parser.add_argument('-c', '--continue', dest='c', default=False, action='store_true',
-                        help='continue jobs from checkpoint, default: %(default)s)')
+                        help='continue jobs from checkpoint, (default: %(default)s)')
+    parser.add_argument('-d', '--debug', dest='d', default=False, action='store_true',
+                        help='run in debugging mode, (default: %(default)s)')
     args = parser.parse_args()
 
     toml_file = args.toml
     pl = Pipeline(toml_file, args.c)
     pl.init()
-    pl.run()
+    pl.run(args.d)
 
 
 if __name__ == "__main__":
