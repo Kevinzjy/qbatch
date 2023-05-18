@@ -142,7 +142,7 @@ class Pipeline(object):
         # Record some information
         header = {
             "Python version": sys.version.split(' ')[0],
-            "Pysched version": __version__,
+            "Qbatch version": __version__,
             "Command line": ' '.join(sys.argv),
             "Pipeline name": self['pipeline'],
             "Pipeline version": self['version'],
