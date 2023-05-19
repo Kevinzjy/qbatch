@@ -6,12 +6,14 @@ import sys
 import json
 import copy
 import shutil
+import xml.etree.ElementTree as ET
 from time import sleep
 from pathlib import Path
 from datetime import datetime
+from itertools import product
 from subprocess import getstatusoutput
 from collections import namedtuple, defaultdict
-__version__ = '0.1.0'
+__version__ = '0.2.0'
 PATTERN = re.compile(r'\{\S*?\}')
 HIGHLIGHT = "\033[1;32m"
 NORMAL = "\033[0m"
@@ -80,7 +82,7 @@ class Pipeline(object):
             self.dict = tomli.load(f)
 
         # Naive check of configuration file
-        for key in ['pipeline', 'version', 'work_dir', 'sample_sheet', 'job']:
+        for key in ['pipeline', 'version', 'work_dir', 'job']:
             if key not in self.dict:
                 sys.stderr.write(f"\nError traceback:\n{key} not found in {file_name}\n")
                 sys.stderr.write(f"\nFailed reason:\nrequired field {HIGHLIGHT}{key}{NORMAL} not found in the header of toml file.\n")
@@ -157,16 +159,12 @@ class Pipeline(object):
             print(f"{k+':'+(k_len-len(k))*' '}{v}")
         print("===========================================")
 
-        # Load sample sheet
-        self.samples = self.load_sample_sheet()
-
-    def load_sample_sheet(self):
+    def load_sample_sheet(self, ss_file):
         """Load sample sheet
 
         Returns:
             list: list of sample as namedtuple
         """
-        ss_file = self['sample_sheet']
         samples = []
         with open(ss_file, 'r') as f:
             field_names = f.readline().rstrip().split(',')
@@ -176,6 +174,21 @@ class Pipeline(object):
                 samples.append(Sample(*content))
 
         return samples
+
+    def load_group_sheet(self, gs_file):
+        """Load group sheet
+
+        Returns:
+            list: list of groups as named tuple
+        """
+        groups = []
+        with open(gs_file, 'r') as f:
+            field_names = f.readline().rstrip().split(',')
+            Group = namedtuple("Group", field_names)
+            for line in f:
+                content = line.rstrip().split(',')
+                groups.append(Group(*content))
+        return groups
 
     def load_checkpoint(self):
         """Get unfinished jobs in the last run
@@ -225,18 +238,140 @@ class Pipeline(object):
         for job_name, job_dict in self['job'].items():
             template = Template(job_name, job_dict)
 
-            # Submit job for each sample
-            for sample in self.samples:
-                # Init job object & parse job for each sample
-                job = Job(job_name + "." + sample.name, template.dict)
-                job.map_sample(sample, self.dict)
+            if 'sample_sheet' in job_dict:
+                samples = self.load_sample_sheet(job_dict['sample_sheet'])
+            else:
+                samples = {}
+
+            if 'group_sheet' in job_dict:
+                groups = self.load_group_sheet(job_dict['group_sheet'])
+            else:
+                groups = {}
+
+            # Iter through samples & groups
+            if len(samples) > 0 and len(groups) > 0:
+                for sample, group in product(samples, groups):
+                    # Init job object & parse job
+                    job = Job(job_name+'.'+sample.name+'.'+group.name, template.dict)
+                    job.map_(sample, group, self.dict)
+
+                    # Create PBS job script
+                    pbs_file = self.script_dir / (job.name + ".sh")
+                    pbs_job = PBSJob(job, self.dict, pbs_file)
+                    pbs_job.write()
+
+                    # If checkpoint defined
+                    if self.is_continue and self.jobs is not None:
+                        # If job has been finished
+                        if job.name not in self.jobs:
+                            job_ids[job.name] = None
+                            continue
+
+                    # Get dependencies
+                    depend_ids = []
+                    if 'depend' in job:
+                        job_depends = job['depend'] if isinstance(job['depend'], list) else [job['depend']]
+                        for i in job_depends:
+                            # For group jobs
+                            d_prefix = i+'.'+sample.name+'.'+group.name
+                            if d_prefix in job_ids:
+                                d_id = job_ids[d_prefix]
+                                depend_ids.append(d_id)
+                                continue
+
+                            # For sample jobs
+                            d_prefix = i+'.'+sample.name
+                            if d_prefix in job_ids:
+                                d_id = job_ids[d_prefix]
+                                depend_ids.append(d_id)
+                                continue
+
+                            # For integrative jobs
+                            d_prefix = i
+                            if d_prefix in job_ids:
+                                d_id = job_ids[d_prefix]
+                                depend_ids.append(d_id)
+                                continue
+
+                            sys.stderr.write(f"\nError traceback:\n{job['depend']}\n")
+                            sys.stderr.write(f"\nFailed reason:\nfailed to find job dependencies\n")
+                            sys.exit(0)
+
+                    # Remove finished dependencies
+                    depend_ids = [i for i in depend_ids if i is not None]
+
+                    # Submit PBS job
+                    pbs_cmd, pbs_id = pbs_job.submit(depend_ids, is_dry)
+                    job_ids[job.name] = pbs_id
+
+                    # Record submission
+                    if pbs_cmd is not None:
+                        lock.write(f"{job.name}\t{pbs_id}\t{pbs_cmd}\n")
+
+            # Iter through samples only
+            elif len(samples) > 0:
+                for sample in samples:
+                    # Init job object & parse job
+                    job = Job(job_name+'.'+sample.name, template.dict)
+                    job.map_(sample, {}, self.dict)
+
+                    # Create PBS job script
+                    pbs_file = self.script_dir / (job.name + ".sh")
+                    pbs_job = PBSJob(job, self.dict, pbs_file)
+                    pbs_job.write()
+
+                    # If checkpoint defined
+                    if self.is_continue and self.jobs is not None:
+                        # If job has been finished
+                        if job.name not in self.jobs:
+                            job_ids[job.name] = None
+                            continue
+
+                    # Get dependencies
+                    depend_ids = []
+                    if 'depend' in job:
+                        job_depends = job['depend'] if isinstance(job['depend'], list) else [job['depend']]
+                        for i in job_depends:
+                            # For sample / group jobs
+                            d_prefix = i+'.'+sample.name
+                            for d_name, d_id in job_ids.items():
+                                if d_name.startswith(d_prefix):
+                                    depend_ids.append(d_id)
+                            if len(depend_ids) > 0:
+                                continue
+
+                            # For integretive jobs
+                            d_prefix = i
+                            if d_prefix in job_ids:
+                                d_id = job_ids[d_prefix]
+                                depend_ids.append(d_id)
+                                continue
+
+                            sys.stderr.write(f"\nError traceback:\n{job['depend']}\n")
+                            sys.stderr.write(f"\nFailed reason:\nfailed to find job dependencies\n")
+                            sys.exit(0)
+
+                    # Remove finished dependencies
+                    depend_ids = [i for i in depend_ids if i is not None]
+
+                    # Submit PBS job
+                    pbs_cmd, pbs_id = pbs_job.submit(depend_ids, is_dry)
+                    job_ids[job.name] = pbs_id
+
+                    # Record submission
+                    if pbs_cmd is not None:
+                        lock.write(f"{job.name}\t{pbs_id}\t{pbs_cmd}\n")
+
+            # Itergrative job
+            else:
+                # Init job object & parse job
+                job = Job(job_name, template.dict)
+                job.map_({}, {}, self.dict)
 
                 # Create PBS job script
                 pbs_file = self.script_dir / (job.name + ".sh")
                 pbs_job = PBSJob(job, self.dict, pbs_file)
                 pbs_job.write()
-                if is_dry:
-                    continue
 
                 # If checkpoint defined
                 if self.is_continue and self.jobs is not None:
@@ -248,27 +383,36 @@ class Pipeline(object):
                 # Get dependencies
                 depend_ids = []
                 if 'depend' in job:
-                    if isinstance(job['depend'], list):
-                        for i in job['depend']:
-                            d_id = job_ids[i+'.'+sample.name]
-                            depend_ids.append(d_id)
-                    else:
-                        d_id = job_ids[job['depend']+'.'+sample.name]
-                        depend_ids.append(d_id)
+                    job_depends = job['depend'] if isinstance(job['depend'], list) else [job['depend']]
+                    for i in job_depends:
+                        # For all jobs
+                        d_prefix = i
+                        for d_name, d_id in job_ids.items():
+                            if d_name.startswith(d_prefix):
+                                depend_ids.append(d_id)
+                        if len(depend_ids) > 0:
+                            continue
+
+                        sys.stderr.write(f"\nError traceback:\n{job['depend']}\n")
+                        sys.stderr.write(f"\nFailed reason:\nfailed to find job dependencies\n")
+                        sys.exit(0)
+
+                # Remove finished dependencies
                 depend_ids = [i for i in depend_ids if i is not None]
 
                 # Submit PBS job
-                pbs_cmd, pbs_id = pbs_job.submit(depend_ids)
+                pbs_cmd, pbs_id = pbs_job.submit(depend_ids, is_dry)
                 job_ids[job.name] = pbs_id
 
                 # Record submission
                 if pbs_cmd is not None:
                     lock.write(f"{job.name}\t{pbs_id}\t{pbs_cmd}\n")
+
         lock.close()
 
         n_skip = sum([1 for i in job_ids.values() if i is None])
         n_total = len(job_ids)
-        print(f"Submitted {n_total-n_skip} jobs, skipped {n_skip} jobs for {len(self.samples)} samples.")
+        print(f"Submitted {n_total-n_skip} jobs, skipped {n_skip} jobs.")
 
 
 class Template(object):
@@ -293,7 +437,7 @@ class Template(object):
     def __getitem__(self, key):
         """Expose self.dict as iterator values"""
         keys = key.split('.')
-        p = self.dict
+        p = copy.deepcopy(self.dict)
         for i in keys:
             if i not in p:
                 raise KeyError(f"Value {key} not found.")
@@ -355,16 +499,16 @@ class Job(Template):
         self.name = job_name
         self.dict = copy.deepcopy(job_dict)
 
-    def map_sample(self, sample, env):
+    def map_(self, sample, group, env):
         """Map template dict using sample and pipeline arguments
 
         Args:
             sample (Sample): namedtuple of sample
             env (dict): dict of Pipeline object
         """
-        self.resolve(self.dict, sample, env)
+        self.resolve(self.dict, sample, group, env)
 
-    def resolve(self, d, sample, env):
+    def resolve(self, d, sample, group, env):
         """Iterative through each leaf node to parse parameters using pipeline environment
         and sample attributes
 
@@ -375,7 +519,7 @@ class Job(Template):
         """
         for k, v in d.items():
             if isinstance(v, dict):
-                self.resolve(d[k], sample, env)
+                self.resolve(d[k], sample, group, env)
             elif isinstance(v, str):
                 params = self.get_param(v)
                 if params is None:
@@ -396,12 +540,23 @@ class Job(Template):
                             formatter[param] = p_value
                             continue
 
+                        # From group attributes
+                        if param.split('.')[0] == "group":
+                            s_k = param.split(".")[1]
+                            if s_k not in group._fields:
+                                sys.stderr.write(f"\nError traceback:\nfield {s_k} not found for group {group}\n")
+                                sys.stderr.write(f"\nFailed reason:\nthe {HIGHLIGHT}{param}{NORMAL} requires each sample has {HIGHLIGHT}{s_k}{NORMAL} field.\n")
+                                sys.exit(0)
+                            p_value = getattr(group, s_k)
+                            formatter[param] = p_value
+                            continue
+
                         # From local variables
                         try:
                             p_value = self[param]
                             formatter[param] = p_value
                             continue
-                        except KeyError:
+                        except Exception:
                             pass
 
                         # From global variables
@@ -409,7 +564,7 @@ class Job(Template):
                             p_value = env[param]
                             formatter[param] = p_value
                             continue
-                        except KeyError:
+                        except Exception:
                             pass
 
                         # Not found
@@ -421,6 +576,10 @@ class Job(Template):
 
                     new_v = v
                     for i, j in formatter.items():
+                        if not isinstance(i, str) or not (isinstance(j, int) or isinstance(j, str)):
+                            sys.stderr.write(f"\nFailed to parse parameter:\nkey: {i}, value: {j}\n")
+                            sys.stderr.write(f"\nFailed reason:\nkey and value should be strings.\n")
+                            sys.exit(0)
                         new_v = new_v.replace("{"+str(i)+"}", str(j))
                     d[k] = new_v
             else:
@@ -566,49 +725,124 @@ class PBSJob(object):
             out.write(f"echo \"[$(date)] {self.job_name} finished\"\n")
             out.write(f"echo $PBS_JOBID >> {self.work_dir}/checkpoint\n")
 
-    def submit(self, depend_ids=[]):
+    def submit(self, depend_ids=[], is_dry=False):
         if self.skip:
             sys.stderr.write(f"Skip {self.job_name} because it has been finished.\n")
             return None, None
 
+        sys.stderr.write(f"Submitting {self.job_name}\n")
         if self.scheduler == 'slurm':
-            return self.submit_slurm(depend_ids)
+            return self.submit_slurm(depend_ids, is_dry)
         else:
-            return self.submit_torque(depend_ids)
+            return self.submit_torque(depend_ids, is_dry)
 
-    def submit_slurm(self, depend_ids=[]):
+    def submit_slurm(self, depend_ids=[], is_dry=False):
         # Get dependencies
         if len(depend_ids) > 0:
             cmd = f"sbatch --dependency=afterok:{':'.join(depend_ids)} {self.pbs_file}"
         else:
             cmd = f"sbatch {self.pbs_file}"
 
-        status, ret = getstatusoutput(cmd)
+        # Dry run
+        if is_dry:
+            return cmd, self.job_name
 
+        status, ret = getstatusoutput(cmd)
         if status != 0:
             sys.stderr.write(f"\nError traceback:\n{cmd}\n{ret}")
             sys.stderr.write(f"\nFailed reason:\nfailed to submit job {self.pbs_file}\n")
             sys.exit(0)
         else:
-            sleep(0.1)
+            sleep(0.01)
             qid = ret.split(' ')[-1]
             return cmd, qid
 
-    def submit_torque(self, depend_ids=[]):
-        # Get dependencies
+    def submit_torque(self, depend_ids=[], is_dry=False):
         if len(depend_ids) > 0:
             cmd = f"qsub -W depend=afterok:{':'.join(depend_ids)} {self.pbs_file}"
         else:
             cmd = f"qsub {self.pbs_file}"
 
+        # Dry run
+        if is_dry:
+            return cmd, self.job_name
+
+        # Submit
         status, ret = getstatusoutput(cmd)
+        while status == 208:
+            # Failed to solve dependencies
+            # Get dependencies
+            running_depends = [i for i in depend_ids if validate_torque_job(i)]
+            if len(running_depends) == len(depend_ids):
+                sys.stderr.write(f"\nError traceback:\n{cmd}\n{ret}\n")
+                sys.stderr.write(f"\nFailed reason:\nfailed to submit job {self.pbs_file}\n")
+                sys.exit(0)
+
+            if len(running_depends) > 0:
+                cmd = f"qsub -W depend=afterok:{':'.join(running_depends)} {self.pbs_file}"
+            else:
+                cmd = f"qsub {self.pbs_file}"
+            status, ret = getstatusoutput(cmd)
+
         if status != 0:
-            sys.stderr.write(f"\nError traceback:\n{cmd}\n{ret}\n")
+            sys.stderr.write(f"\nError traceback (status {status}):\n{cmd}\n{ret}\n")
             sys.stderr.write(f"\nFailed reason:\nfailed to submit job {self.pbs_file}\n")
             sys.exit(0)
         else:
-            sleep(0.1)
             return cmd, ret
+
+
+def etree_to_dict(t):
+    """From https://stackoverflow.com/questions/2148119/how-to-convert-an-xml-string-to-a-dictionary
+
+    Args:
+        t (ElementTree): ET
+
+    Returns:
+        dict: dict of XML data
+    """
+    d = {t.tag: {} if t.attrib else None}
+    children = list(t)
+    if children:
+        dd = defaultdict(list)
+        for dc in map(etree_to_dict, children):
+            for k, v in dc.items():
+                dd[k].append(v)
+        d = {t.tag: {k:v[0] if len(v) == 1 else v for k, v in dd.items()}}
+    if t.attrib:
+        d[t.tag].update(('@' + k, v) for k, v in t.attrib.items())
+    if t.text:
+        text = t.text.strip()
+        if children or t.attrib:
+            if text:
+              d[t.tag]['#text'] = text
+        else:
+            d[t.tag] = text
+    return d
+
+
+def validate_torque_job(job_id):
+    """Whether job has been finished
+
+    Args:
+        job_id (str): job identifier
+
+    Returns:
+        bool: True for valid jobs, False for finished / not existed jobs
+    """
+    status, ret = getstatusoutput(f"qstat -x {job_id}")
+    if status == 0:
+        root = ET.fromstring(ret)
+        d = etree_to_dict(root)
+        job_state = d['Data']['Job']['job_state']
+        if job_state == "C" or job_state == "E":
+            return False
+        else:
+            return True
+    else:
+        # status == 153
+        return False
+
 
 def main():
     import argparse

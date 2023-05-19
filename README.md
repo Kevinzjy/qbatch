@@ -2,6 +2,10 @@
 
 A simplified version of workflow management system for scalable data analysis.
 
+# Change log
+
+- Version 0.2.0: move sample_sheet from header to job section, add group_sheet support
+
 # Usage
 
 # Installation
@@ -25,7 +29,6 @@ The main input is a configuration in TOML format. Here's a simple example:
 pipeline = "kallisto_lncipedia"
 version = "2023.5.2"
 work_dir = "/histor/zhao/zhangjy/test_data/kallisto_lncipedia"
-sample_sheet = "/histor/zhao/zhangjy/test_data/sample_sheet.csv"
 pbs_scheduler = "torque"
 pbs_server = 'mu02'
 pbs_queue = 'batch'
@@ -39,6 +42,7 @@ kallisto = "/histor/public/software/kallisto/kallisto"
 
 # Rules
 [job.kallisto]
+sample_sheet = "/histor/zhao/zhangjy/test_data/sample_sheet.csv"
 input = [
     {r1 = "{sample.read1}"},
     {r2 = "{sample.read2}"},
@@ -64,7 +68,6 @@ In the header section, the pipeline/version/work_dir/sample_sheet fields is requ
 | pipeline | name of the pipeline |
 | version | version of the pipeline |
 | work_dir | path to the main output directory of the pipeline, will be created automatically if it does not exist |
-| sample_sheet | path to sample_sheet.csv (will be explained later) |
 
 Supported variables for submitting PBS jobs are:
 
@@ -77,18 +80,6 @@ Supported variables for submitting PBS jobs are:
 
 Other variables defined in the header section (e.g. `kallisto` and `index`) can also be accessed globally:
 
-## The sample sheet
-
-The sample_sheet is a comma separated file, where the first row is the name of each column, and the other rows represent the samples to be analysed.
-The only required column is `name`, which should be used to define the name of each sample. Other columns can be named as you wish.
-
-```
-name,read1,read2
-26-ADJ,/data/26-ADJ_1.fq.gz,/data/26-ADJ_2.fq.gz
-```
-
-Any columns defined in the `sample_sheet.csv` can be accessed in the TOML file using `{sample.name}` or `{sample.col_name}`.
-
 ## Job configuration
 
 The name of each job should be strictly in `[job.job_name]` format (e.g. `[job.kallisto]`, `[job.sleuth]`).
@@ -98,6 +89,8 @@ The name of each job should be strictly in `[job.job_name]` format (e.g. `[job.k
 | Variable | Type | Description | Default |
 |-|-|-|-|
 | depend |  str / list | name of job dependencies | No dependencies |
+| sample_sheet | str | path to sample_sheet file | Optional |
+| group_sheet | str | path to group_sheet file | Optional |
 | input | str / list of dicts | version of the pipeline | No specific input files |
 | output | str / list of dicts | path to the main output directory of the pipeline, will be created automatically if it does not exist | No specific output files |
 | threads | int | numer of cpu cores | 1 |
@@ -109,6 +102,26 @@ The name of each job should be strictly in `[job.job_name]` format (e.g. `[job.k
 | **shell** | str | shell script to execute | required |
 
 All variables defined in each job can be accessed locally using `{var_name}`, e.g. `{threads}` and `{dir}`.
+
+### The sample sheet
+
+The sample_sheet is a comma separated file, where the first row is the name of each column, and the other rows represent the samples to be analysed.
+The only required column is `name`, which should be used to define the name of each sample. Other columns can be named as you wish.
+
+```
+name,read1,read2
+26-ADJ,/data/26-ADJ_1.fq.gz,/data/26-ADJ_2.fq.gz
+```
+
+Any columns defined in the `sample_sheet.csv` can be accessed in the TOML file using `{sample.name}` or `{sample.col_name}`.
+
+If sample_sheet is defined, a copy of job for each sample will be submitted.
+
+### The group sheet
+
+The group_sheet should be in the same format as sample sheet file, but should be accessed using `{group.name}` and `{group.col_name}'.
+
+If both sample_sheet and group_sheet are defined, a copy of job for each sample and group combination will be submitted.
 
 ### Job dependencies
 
@@ -130,17 +143,17 @@ For example,
 
 ```toml
 # Single input, defined value can be accessed with {input} or {output}
-input = "path/to/read1.fastq.gz"
-output = "path/to/sorted.bam"
+input = "path/to/{sample.name}.fastq.gz"
+output = "path/to/{sample.name}.sorted.bam"
 
 # Multiple input, defined values can be accessed with {input.read1} / {input.read2} / {output.bam} / {output.unmapped}.
 input = [
-    {read1 = "path/to/read1.fastq.gz"},
-    {read2 = "path/to/read2.fastq.gz"},
+    {read1 = "path/to/{sample.name}_r1.fastq.gz"},
+    {read2 = "path/to/{sample.name}_r2.fastq.gz"},
 ]
 output = [
-    {bam = "path/to/sorted.bam"},
-    {unmapped = "path/to/unmapped.fastq"}
+    {bam = "path/to/{sample.name}.sorted.bam"},
+    {unmapped = "path/to/{sample.name}.unmapped.fastq"}
 ]
 ```
 
