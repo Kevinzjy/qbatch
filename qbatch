@@ -757,7 +757,7 @@ class PBSJob(object):
             sys.stderr.write(f"\nFailed reason:\nfailed to submit job {self.pbs_file}\n")
             sys.exit(0)
         else:
-            sleep(0.1)
+            sleep(0.01)
             qid = ret.split(' ')[-1]
             return cmd, qid
 
@@ -793,7 +793,6 @@ class PBSJob(object):
             sys.stderr.write(f"\nFailed reason:\nfailed to submit job {self.pbs_file}\n")
             sys.exit(0)
         else:
-            sleep(0.1)
             return cmd, ret
 
 
