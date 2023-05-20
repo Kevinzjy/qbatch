@@ -233,6 +233,14 @@ You can also continue unfinished jobs using the record pipeline file. Only jobs 
 qbatch -c work_dir/pipeline
 ```
 
+## Testing a pipeline
+
+You can use `-d` option to specify a dry run, where jobs will be parsed but not submitted to the PBS server
+
+```bash
+qbatch -d pipeline.toml
+```
+
 # **NOTE**
 
 - All paths specified in the TOML and sample_sheet files should be absolute paths.
