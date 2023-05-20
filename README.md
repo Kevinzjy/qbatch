@@ -104,9 +104,8 @@ The name of each job should be strictly in `[job.job_name]` format (e.g. `[job.k
 
 All variables defined in each job can be accessed locally using `{var_name}`, e.g. `{threads}` and `{dir}`.
 
-<<<<<<< HEAD
 The priority of variables: sample > group > job > global
-=======
+
 ### The sample sheet
 
 The sample_sheet is a comma separated file, where the first row is the name of each column, and the other rows represent the samples to be analysed.
@@ -243,7 +242,7 @@ qbatch -d pipeline.toml
 
 # **NOTE**
 
-- All paths specified in the TOML and sample_sheet files should be absolute paths.
+- All paths specified in the TOML and sample_sheet / group_sheet files should be absolute paths.
 - The values defined in `{var}` are parsed line by line. So the variable should be defined in the preceding lines.
 
 
