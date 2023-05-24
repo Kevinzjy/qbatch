@@ -279,6 +279,8 @@ class Pipeline(object):
             return None
 
     def run(self, is_dry):
+        if is_dry:
+            print("Validating jobs because `--dry` is specified.")
         lock = open(self.lock, 'w')
         job_ids = {}
 
@@ -462,6 +464,8 @@ class Pipeline(object):
         n_skip = sum([1 for i in job_ids.values() if i is None])
         n_total = len(job_ids)
         print(f"Submitted {n_total-n_skip} jobs, skipped {n_skip} jobs.")
+        if is_dry:
+            print(f"All jobs seems fine.")
 
 
 class Template(object):
@@ -788,7 +792,7 @@ class PBSJob(object):
         if 'threads' in job:
             self.threads = job['threads']
         else:
-            self.threads = 1
+            self.threads = env['threads']
 
         if 'gpus' in job:
             self.gpus = job['gpus']
@@ -976,8 +980,8 @@ def main():
                         version='%(prog)s v{version}'.format(version=__version__))
     parser.add_argument('-c', '--continue', dest='c', default=False, action='store_true',
                         help='continue jobs from checkpoint, (default: %(default)s)')
-    parser.add_argument('-d', '--debug', dest='d', default=False, action='store_true',
-                        help='run in debugging mode, (default: %(default)s)')
+    parser.add_argument('-d', '--dry', dest='d', default=False, action='store_true',
+                        help='use a dry run to validate jobs, (default: %(default)s)')
     args = parser.parse_args()
 
     toml_file = args.toml

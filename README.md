@@ -77,6 +77,7 @@ Supported variables for submitting PBS jobs are:
 | pbs_server | name of the submitting host |
 | pbs_queue | queue for submitting jobs |
 | pbs_walltime | number of requested maximum hours each job can run |
+| threads | default threads for PBS jobs |
 
 Other variables defined in the header section (e.g. `kallisto` and `index`) can also be accessed globally:
 
@@ -93,7 +94,7 @@ The name of each job should be strictly in `[job.job_name]` format (e.g. `[job.k
 | group_sheet | str | path to group_sheet file | Optional |
 | input | str / list of dicts | version of the pipeline | No specific input files |
 | output | str / list of dicts | path to the main output directory of the pipeline, will be created automatically if it does not exist | No specific output files |
-| threads | int | numer of cpu cores | 1 |
+| threads | int | numer of cpu cores | same as threads in header section |
 | gpus | int | number of gpus | 0 |
 | queue | str | name of queue | same as pbs_queue |
 | walltime | int | number of maximum hours to run | same as pbs_walltime |
@@ -102,6 +103,8 @@ The name of each job should be strictly in `[job.job_name]` format (e.g. `[job.k
 | **shell** | str | shell script to execute | required |
 
 All variables defined in each job can be accessed locally using `{var_name}`, e.g. `{threads}` and `{dir}`.
+
+The priority of variables: sample > group > job > global
 
 ### The sample sheet
 
@@ -229,9 +232,17 @@ You can also continue unfinished jobs using the record pipeline file. Only jobs 
 qbatch -c work_dir/pipeline
 ```
 
+## Testing a pipeline
+
+You can use `-d` option to specify a dry run, where jobs will be parsed but not submitted to the PBS server
+
+```bash
+qbatch -d pipeline.toml
+```
+
 # **NOTE**
 
-- All paths specified in the TOML and sample_sheet files should be absolute paths.
+- All paths specified in the TOML and sample_sheet / group_sheet files should be absolute paths.
 - The values defined in `{var}` are parsed line by line. So the variable should be defined in the preceding lines.
 
 
