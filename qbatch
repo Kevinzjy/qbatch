@@ -290,12 +290,12 @@ class Pipeline(object):
             template.map_(self.dict)
 
             if 'sample_sheet' in job_dict:
-                samples = self.load_sample_sheet(job_dict['sample_sheet'])
+                samples = self.load_sample_sheet(template['sample_sheet'])
             else:
                 samples = {}
 
             if 'group_sheet' in job_dict:
-                groups = self.load_group_sheet(job_dict['group_sheet'])
+                groups = self.load_group_sheet(template['group_sheet'])
             else:
                 groups = {}
 
@@ -574,12 +574,13 @@ class Template(object):
                             continue
 
                         # From local variables
-                        try:
-                            p_value = self[param]
-                            formatter[param] = p_value
-                            continue
-                        except Exception:
-                            pass
+                        if k != param:
+                            try:
+                                p_value = self[param]
+                                formatter[param] = p_value
+                                continue
+                            except Exception:
+                                pass
 
                         # From global variables
                         try:
@@ -689,12 +690,13 @@ class Job(Template):
                             continue
 
                         # From local variables
-                        try:
-                            p_value = self[param]
-                            formatter[param] = p_value
-                            continue
-                        except Exception:
-                            pass
+                        if param != k:
+                            try:
+                                p_value = self[param]
+                                formatter[param] = p_value
+                                continue
+                            except Exception:
+                                pass
 
                         # From global variables
                         try:

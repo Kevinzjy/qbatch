@@ -79,7 +79,9 @@ Supported variables for submitting PBS jobs are:
 | pbs_walltime | number of requested maximum hours each job can run |
 | threads | default threads for PBS jobs |
 
-Other variables defined in the header section (e.g. `kallisto` and `index`) can also be accessed globally:
+Other variables defined in the header section (e.g. `kallisto` and `index`) can also be accessed globally.
+
+**NOTE**: only `str` and `int` variables are allowed in the header section.
 
 ## Job configuration
 
