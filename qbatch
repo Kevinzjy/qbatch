@@ -80,6 +80,7 @@ class Pipeline(object):
         toml_file = ensure_file_exist(file_name)
         with open(toml_file, "rb") as f:
             self.dict = tomli.load(f)
+            self.map_()
 
         # Naive check of configuration file
         for key in ['pipeline', 'version', 'work_dir', 'job']:
@@ -159,6 +160,37 @@ class Pipeline(object):
             print(f"{k+':'+(k_len-len(k))*' '}{v}")
         print("===========================================")
 
+    def map_(self):
+        for k, v in self.dict.items():
+            if k == "jobs":
+                continue
+            if not isinstance(v, str):
+                continue
+            params = self.get_param(v)
+            if params is None:
+                continue
+
+            formatter = {}
+            for param in params:
+                try:
+                    p_value = self.dict[param]
+                    formatter[param] = p_value
+                except Exception:
+                    sys.stderr.write(f"\nError traceback:\n{v.strip()}\n")
+                    sys.stderr.write(f"\nFailed reason:\nfield {HIGHLIGHT}{param}{NORMAL} not found.\n")
+                    sys.stderr.write(f"\nPipeline attributes:\n{self.dict}\n")
+                    sys.exit(0)
+
+            new_v = v
+            for i, j in formatter.items():
+                if not isinstance(i, str) or not (isinstance(j, int) or isinstance(j, str)):
+                    sys.stderr.write(f"\nFailed to parse parameter:\nkey: {i}, value: {j}\n")
+                    sys.stderr.write(f"\nFailed reason:\nkey and value should be strings.\n")
+                    sys.exit(0)
+                new_v = new_v.replace("{"+str(i)+"}", str(j))
+            self.dict[k] = new_v
+
+
     def load_sample_sheet(self, ss_file):
         """Load sample sheet
 
@@ -230,6 +262,22 @@ class Pipeline(object):
         else:
             return None
 
+    @staticmethod
+    def get_param(cmd):
+        """Get parameters inside brace
+
+        Args:
+            cmd (str): command lines to parse
+
+        Returns:
+            list: list of extracted parameters
+        """
+        params = re.findall(PATTERN, cmd)
+        if len(params) > 0:
+            return list(set([i.strip('{}') for i in params]))
+        else:
+            return None
+
     def run(self, is_dry):
         lock = open(self.lock, 'w')
         job_ids = {}
@@ -237,6 +285,7 @@ class Pipeline(object):
         # For each job
         for job_name, job_dict in self['job'].items():
             template = Template(job_name, job_dict)
+            template.map_(self.dict)
 
             if 'sample_sheet' in job_dict:
                 samples = self.load_sample_sheet(job_dict['sample_sheet'])
@@ -486,6 +535,90 @@ class Template(object):
             else:
                 pass
 
+    def map_(self, env):
+        """Map template dict using sample and pipeline arguments
+
+        Args:
+            sample (Sample): namedtuple of sample
+            env (dict): dict of Pipeline object
+        """
+        self.resolve(self.dict, env)
+
+    def resolve(self, d, env):
+        """Iterative through each leaf node to parse parameters using pipeline environment
+        and sample attributes
+
+        Args:
+            d (dict): dict to parse
+            sample (Sample): namedtuple of sample
+            env (dict): dict of Pipeline object
+        """
+        for k, v in d.items():
+            if isinstance(v, dict):
+                self.resolve(d[k], env)
+            elif isinstance(v, str):
+                params = self.get_param(v)
+                if params is None:
+                    pass
+                else:
+                    formatter = {}
+                    for param in params:
+                        p_value = None
+
+                        # Skip sample and group attributes
+                        if param.split('.')[0] in ["sample", "group"]:
+                            continue
+
+                        # From local variables
+                        try:
+                            p_value = self[param]
+                            formatter[param] = p_value
+                            continue
+                        except Exception:
+                            pass
+
+                        # From global variables
+                        try:
+                            p_value = env[param]
+                            formatter[param] = p_value
+                            continue
+                        except Exception:
+                            pass
+
+                        # Not found
+                        sys.stderr.write(f"\nError traceback:\n{v.strip()}\n")
+                        sys.stderr.write(f"\nFailed reason:\nfield {HIGHLIGHT}{param}{NORMAL} not found.\n")
+                        sys.stderr.write(f"\nPipeline attributes:\n{env}\n")
+                        sys.stderr.write(f"\nJob attributes:\n{self.dict}\n")
+                        sys.exit(0)
+
+                    new_v = v
+                    for i, j in formatter.items():
+                        if not isinstance(i, str) or not (isinstance(j, int) or isinstance(j, str)):
+                            sys.stderr.write(f"\nFailed to parse parameter:\nkey: {i}, value: {j}\n")
+                            sys.stderr.write(f"\nFailed reason:\nkey and value should be strings.\n")
+                            sys.exit(0)
+                        new_v = new_v.replace("{"+str(i)+"}", str(j))
+                    d[k] = new_v
+            else:
+                pass
+
+    @staticmethod
+    def get_param(cmd):
+        """Get parameters inside brace
+
+        Args:
+            cmd (str): command lines to parse
+
+        Returns:
+            list: list of extracted parameters
+        """
+        params = re.findall(PATTERN, cmd)
+        if len(params) > 0:
+            return list(set([i.strip('{}') for i in params]))
+        else:
+            return None
+
 
 class Job(Template):
 
@@ -584,22 +717,6 @@ class Job(Template):
                     d[k] = new_v
             else:
                 pass
-
-    @staticmethod
-    def get_param(cmd):
-        """Get parameters inside brace
-
-        Args:
-            cmd (str): command lines to parse
-
-        Returns:
-            list: list of extracted parameters
-        """
-        params = re.findall(PATTERN, cmd)
-        if len(params) > 0:
-            return list(set([i.strip('{}') for i in params]))
-        else:
-            return None
 
     def is_finished(self):
         # No defined output file
@@ -753,7 +870,7 @@ class PBSJob(object):
             sys.stderr.write(f"\nFailed reason:\nfailed to submit job {self.pbs_file}\n")
             sys.exit(0)
         else:
-            sleep(0.01)
+            sleep(0.1)
             qid = ret.split(' ')[-1]
             return cmd, qid
 
@@ -789,6 +906,7 @@ class PBSJob(object):
             sys.stderr.write(f"\nFailed reason:\nfailed to submit job {self.pbs_file}\n")
             sys.exit(0)
         else:
+            sleep(0.1)
             return cmd, ret
 
 
