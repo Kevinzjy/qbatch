@@ -203,7 +203,8 @@ class Pipeline(object):
             Sample = namedtuple("Sample", field_names)
             for line in f:
                 content = line.rstrip().split(',')
-                samples.append(Sample(*content))
+                if len(content) > 1 or content[0] != "":
+                    samples.append(Sample(*content))
 
         return samples
 
@@ -219,7 +220,8 @@ class Pipeline(object):
             Group = namedtuple("Group", field_names)
             for line in f:
                 content = line.rstrip().split(',')
-                groups.append(Group(*content))
+                if len(content) > 1 or content[0] != "":
+                    groups.append(Group(*content))
         return groups
 
     def load_checkpoint(self):
