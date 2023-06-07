@@ -1,0 +1,5 @@
+name,fastq
+HiPore-C_GM12878,/histor/zhao/zhangjy/01.ZhaoLab/CZY/03.Pore-C/01.RawData/HiPore-C_GM12878/SRR19920180.fastq.gz
+Pore-C_HCC1954,/histor/zhao/zhangjy/01.ZhaoLab/CZY/03.Pore-C/01.RawData/Pore-C_HCC1954/SRR11589411.fastq.gz
+Pore-C_GM12878,/histor/zhao/zhangjy/01.ZhaoLab/CZY/03.Pore-C/01.RawData/Pore-C_GM12878/SRR11589391.fastq.gz
+SCA_HEK293,/histor/zhao/zhangjy/01.ZhaoLab/CZY/03.Pore-C/01.RawData/SCA_HEK293/SCA_HEK293_pass.fastq.gz

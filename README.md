@@ -57,7 +57,7 @@ mkdir -p {out_dir}
 """
 ```
 
-See to `example.csv` and `example.toml` for another example TOML configuration.
+See to `example/Hi-C.toml` and `example/samples.csv` for another example TOML and sample sheet configuration.
 
 ## The header section of the TOML file
 

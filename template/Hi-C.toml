@@ -1,0 +1,104 @@
+# Parameters
+pipeline = "01.pipeline.toml"
+version = "2023/05/17 18:12:26"
+cwd = "/histor/zhao/zhangjy/01.ZhaoLab/CZY/03.Pore-C/02.Analysis"
+work_dir = "{cwd}/qsub.pipeline"
+sample_sheet = "{cwd}/samples.csv"
+pbs_scheduler = "torque"
+pbs_server = "mu02"
+pbs_queue = "batch"
+pbs_walltime = 1200
+threads = 32
+
+# Executable
+fastq_filter = "/histor/public/software/fastq-filter/bin/fastq-filter"
+f5c = "/histor/public/software/f5c-v1.1/f5c"
+samtools = "/histor/public/software/samtools-1.11/bin/samtools"
+falign = "/histor/public/software/Falign-v0.0.2/falign"
+nanopolish = "/histor/public/software/nanopolish_cpggpc/nanopolish"
+java = "/histor/public/software/jdk1.8.0_181/bin/java"
+python3 = "/histor/zhao/zhangjy/envs/py3.10/bin/python3"
+juicer = "/histor/public/software/juicer_tools/juicer_tools_1.22.01.jar"
+methyl_script = "/histor/public/software/nanopolish_cpggpc/scripts/calculate_methylation_frequency.py"
+contact_script = "/histor/zhao/zhangjy/01.ZhaoLab/02.nanopore_interactome/01.MeLo-C/scripts/01.paf_to_contact.py"
+hic2cool = "/histor/public/software/hic2cool/bin/hic2cool"
+cooler = "/histor/public/software/cooler/bin/cooler"
+cooltools = "/histor/public/software/cooltools/bin/cooltools"
+
+# Reference
+genome = "/histor/public/database/gencode/v37/GRCh38.primary_assembly.genome.fa"
+chrom_size = "/histor/zhao/zhangjy/01.ZhaoLab/02.nanopore_interactome/01.MeLo-C/database/chrom.sizes"
+digestion = "/histor/zhao/zhangjy/01.ZhaoLab/02.nanopore_interactome/01.MeLo-C/database/hg38_DpnII.txt"
+
+# Rules
+# Alignment paf
+[job.align]
+sample_sheet = "{sample_sheet}"
+input = "{sample.fastq}"
+output = [
+    {paf = "{cwd}/out_alignment/{sample.name}.paf"},
+    {contact = "{cwd}/out_contacts/{sample.name}.contacts.txt"},
+    {fragment = "{cwd}/out_contacts/{sample.name}.fragments.txt"},
+]
+log = "{work_dir}/logs/{sample.name}.falign_paf.logs"
+shell = """
+mkdir -p {cwd}/out_alignment
+{falign} -num_threads {threads} -outfmt paf ^GATC {genome} {input} > {output.paf}
+
+mkdir -p {cwd}/out_contacts
+{python3} {contact_script} {output.paf} {output.fragment} {output.contact} {threads}
+"""
+
+# Create contacts
+[job.hic]
+depend = "align"
+sample_sheet = "{sample_sheet}"
+input = "{cwd}/out_contacts/{sample.name}.contacts.txt"
+output = [
+    {sorted = "{cwd}/out_contacts/{sample.name}.contacts.sorted.txt"},
+    {hic = "{cwd}/out_contacts/{sample.name}.hic"},
+    {cool = "{cwd}/out_contacts/{sample.name}.mcool"},
+]
+log = "{work_dir}/logs/{sample.name}.contact.logs"
+shell = """
+# Create .hic file
+sort -S 80% -k3,3d -k7,7d --parallel={threads} -T {cwd}/out_contacts \
+    -o {output.sorted} {input}
+{java} -Xmx128g -jar {juicer} pre \
+    --threads {threads} {output.sorted} {output.hic} hg38
+{hic2cool} convert {output.hic} {output.cool} -p {threads}
+"""
+
+# Tracks
+[job.100kb]
+depend = "align"
+sample_sheet = "{sample_sheet}"
+input = "{cwd}/out_contacts/{sample.name}.contacts.txt"
+output = [
+    {cool = "{cwd}/out_tracks/{sample.name}.contacts.100kb.cool"},
+]
+log = "{work_dir}/logs/{sample.name}.100kb.logs"
+shell = """
+# Create cool
+mkdir -p {cwd}/out_tracks
+cat {input} | tr ' ' '\t' | {cooler} cload pairs -c1 3 -p1 4 -c2 7 -p2 8 -0 {chrom_size}:100000 - {output.cool}
+{cooler} balance -p {threads} {output.cool}
+"""
+
+[job.100M]
+depend = "align"
+sample_sheet = "{sample_sheet}"
+input = "{cwd}/out_contacts/{sample.name}.contacts.txt"
+output = [
+    {contact = "{cwd}/out_contacts/{sample.name}.contacts.100M.txt"},
+    {cool = "{cwd}/out_tracks/{sample.name}.contacts.100M.100kb.cool"},
+]
+log = "{work_dir}/logs/{sample.name}.100M.logs"
+shell = """
+head -n 100000000 {input} > {output.contact}
+
+mkdir -p {cwd}/out_tracks
+cat {output.contact} | tr ' ' '\t' | {cooler} cload pairs -c1 3 -p1 4 -c2 7 -p2 8 -0 {chrom_size}:100000 - {output.cool}
+{cooler} balance -p {threads} {output.cool}
+"""
+
