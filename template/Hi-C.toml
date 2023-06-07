@@ -20,15 +20,15 @@ java = "/histor/public/software/jdk1.8.0_181/bin/java"
 python3 = "/histor/zhao/zhangjy/envs/py3.10/bin/python3"
 juicer = "/histor/public/software/juicer_tools/juicer_tools_1.22.01.jar"
 methyl_script = "/histor/public/software/nanopolish_cpggpc/scripts/calculate_methylation_frequency.py"
-contact_script = "/histor/zhao/zhangjy/01.ZhaoLab/02.nanopore_interactome/01.MeLo-C/scripts/01.paf_to_contact.py"
+contact_script = "/histor/zhao/zhangjy/01.ZhaoLab/CZY/scripts/01.paf_to_contact.py"
 hic2cool = "/histor/public/software/hic2cool/bin/hic2cool"
 cooler = "/histor/public/software/cooler/bin/cooler"
 cooltools = "/histor/public/software/cooltools/bin/cooltools"
 
 # Reference
 genome = "/histor/public/database/gencode/v37/GRCh38.primary_assembly.genome.fa"
-chrom_size = "/histor/zhao/zhangjy/01.ZhaoLab/02.nanopore_interactome/01.MeLo-C/database/chrom.sizes"
-digestion = "/histor/zhao/zhangjy/01.ZhaoLab/02.nanopore_interactome/01.MeLo-C/database/hg38_DpnII.txt"
+chrom_size = "/histor/zhao/zhangjy/01.ZhaoLab/CZY/database/chrom.sizes"
+digestion = "/histor/zhao/zhangjy/01.ZhaoLab/CZY/database/hg38_DpnII.txt"
 
 # Rules
 # Alignment paf
